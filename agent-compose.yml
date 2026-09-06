@@ -1,0 +1,11 @@
+name: security-baseline
+agents:
+  baseline:
+    provider: codex
+    model: deepseek-chat
+    image: chaitin/agent-compose-guest:latest
+    driver:
+      docker: {}
+    workspace:
+      provider: file
+      path: baseline-scripts

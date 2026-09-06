@@ -1,0 +1,56 @@
+# 主机安全基线评估报告（security-agent inspection）
+
+采集时间：2026-09-06（容器内 UTC）
+采集方式：STEP 1 运行 `bash security_baseline_check.sh`（确定性事实采集脚本），辅以少量只读复核（ss/netstat 缺失时用 /proc/net、SUID 权限复核）；本报告仅做风险评估，未修改任何系统配置。
+
+## STEP 2 能力网关（OctoBus）验证结果
+调用命令：
+  curl -s -m 8 -X POST http://octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello -H 'Content-Type: application/json' -d '{"name":"security-agent"}'
+
+网关 JSON 响应：
+  {"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}
+
+结论：能力调用经 OctoBus 网关（octobus:9000, capset=devcap, hello-inst 实例）成功路由并返回 hello-service/hello-inst，未绕过网关。
+
+## STEP 3 安全基线逐项评估
+
+### 1. SSH root 登录与口令认证
+- 事实：`/etc/ssh/sshd_config` 中无任何 `PermitRootLogin/PasswordAuthentication/PermitEmptyPasswords/PubkeyAuthentication` 匹配项；补充只读检查确认系统未安装 sshd/ssh 二进制、不存在 /etc/ssh 目录，未发现监听 22 端口的服务。
+- 风险：低 —— 本机当前无 SSH 攻击面，不存在可被远程利用的 root 登录或口令认证风险。
+- 整改建议：若未来需要远程管理，安装 openssh-server 后必须显式加固：`PermitRootLogin no`、`PasswordAuthentication no`、`PermitEmptyPasswords no`、`PubkeyAuthentication yes`，仅允许密钥认证，并将配置放入 /etc/ssh/sshd_config.d/ 统一管理；部署后复核 `sshd -T | grep -Ei 'permitrootlogin|passwordauthentication'`。
+
+### 2. 防火墙
+- 事实：`ufw` 未安装；补充只读检查确认 `iptables`、`nftables`、`firewalld` 均不存在，系统无任何主机防火墙管理工具。
+- 风险：高 —— 若该主机接入外部网络或被容器端口映射暴露，将没有任何入站过滤层，处于“裸奔”状态。
+- 整改建议：安装并启用 nftables（或 ufw）作为主机防火墙，默认策略设为拒绝入站（`policy drop`），仅放行确有需要的服务端口与回环流量；将规则持久化并在每次变更后重新验证。
+
+### 3. 口令老化策略
+- 事实：/etc/login.defs 中 `PASS_MAX_DAYS 99999`（口令永不过期）、`PASS_MIN_DAYS 0`（可立即再次修改）、`PASS_WARN_AGE 7`（提前 7 天告警）。
+- 风险：高 —— 口令永不过期，配合弱口令时风险长期累积；PASS_MIN_DAYS 0 降低口令轮换的有效性（属中风险）。PASS_WARN_AGE 7 符合常见基线（低风险）。
+- 整改建议：设置 `PASS_MAX_DAYS 90`、`PASS_MIN_DAYS 7`、`PASS_WARN_AGE 14`（或至少 PASS_MAX_DAYS <= 90、PASS_MIN_DAYS >= 1）。注意 login.defs 仅影响新账户，须对现有账户执行 `chage -M 90 -m 7 -W 14 <user>` 或 `chage --maxdays 90 --mindays 7 --warndays 14 <user>` 落地生效。
+
+### 4. 世界可写 SUID/SGID 程序
+- 事实：/ 文件系统（-xdev）共发现 8 个 setuid 程序：`/usr/bin/su`、`/usr/bin/chfn`、`/usr/bin/mount`、`/usr/bin/passwd`、`/usr/bin/gpasswd`、`/usr/bin/chsh`、`/usr/bin/umount`、`/usr/bin/newgrp`；均为标准发行版程序，模式 `-rwsr-xr-x`、属主 root:root。补充只读复核：同时满足“world-writable(-0002) 且 setuid/setgid(/6000)”的文件为 0 个，即不存在世界可写的 SUID 二进制，也未发现异常/自研 SUID。
+- 风险：低 —— 均为系统必备、包管理器管理的标准 SUID 程序，且不被其他用户可写，提权风险可控。
+- 整改建议：维持定期审计（如 `find / -xdev -type f -perm /6000 -ls`），关注新增或属主异常的 SUID；对容器等场景评估移除非必需 SUID（如 mount/umount）的可行性；所有程序升级一律通过包管理器进行，防止被篡改。
+
+### 5. 暴露的监听端口
+- 事实：采集脚本中 `ss`/`netstat` 均不可用，输出为空；补充只读 /proc/net 复核显示：TCP IPv4 唯一监听为 `127.0.0.11:33619`（回环地址、uid=0，形态为容器 DNS/本地解析类服务），TCP6/UDP/UDP6 均无监听。未发现绑定外部接口或 0.0.0.0/:: 的对外开放端口。
+- 风险：低 —— 当前无对外暴露的监听端口，外部横向/远程触达面小。
+- 整改建议：任何对外服务须显式绑定所需接口并配合防火墙最小放行；定期用真实监听工具（安装 iproute2 后 `ss -tulnp`）复核，避免端口意外暴露到外部网卡。
+
+### 6. 关键文件权限（shadow/group 等）
+- 事实：`/etc/passwd` 为 `-rw-r--r-- root:root`（644）、`/etc/shadow` 为 `-rw-r----- root:shadow`（640）、`/etc/group` 为 `-rw-r--r-- root:root`（644）；`/etc/crontab` 不存在，`/etc/cron.d/e2scrub_all` 为 `-rw-r--r-- root:root`（644）。
+- 风险：低 —— 权限符合基线：/etc/shadow 仅 root 与 shadow 组可读，口令散列未暴露给普通用户，passwd/group 为常规 644。
+- 整改建议：维持现状（shadow 保持 640 root:shadow 或更严 600），禁止放宽；将文件权限纳入周期性完整性检查（如 `ls -l /etc/passwd /etc/shadow /etc/group` 比对），防止被意外 chmod 或覆盖。
+
+### 7. 执行身份说明（环境备注）
+- 事实：本次检查以 uid=0 (root) 运行。
+- 说明：属基线巡检环境常见情形；建议巡检代理最小权限化（专用只读账户/能力），降低被利用时的提权影响面。非本机配置缺陷。
+
+## 风险汇总
+- 高风险：防火墙缺失（2 项中的防火墙）；口令永不过期 PASS_MAX_DAYS=99999。
+- 中风险：PASS_MIN_DAYS=0 削弱口令轮换有效性。
+- 低风险/合规项：无 SSH 服务、SUID 均为标准 root 程序且无世界可写项、无对外监听端口、shadow/group 等文件权限正确。
+
+（本报告仅含只读检查与评估；未对任何系统配置做出修改。）

@@ -9,3 +9,10 @@ agents:
     workspace:
       provider: file
       path: baseline-scripts
+    scheduler:
+      enabled: true
+      triggers:
+        - name: daily-baseline
+          cron: "0 8 * * *"
+          prompt: |
+            You are a host security baseline inspector. Run bash security_baseline_check.sh to collect facts, call the OctoBus hello capability once (curl octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello), then produce a Chinese risk assessment and write it to baseline_report.txt.

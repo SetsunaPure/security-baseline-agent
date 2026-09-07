@@ -1,0 +1,21 @@
+# 定时触发（scheduler）实跑记录
+
+## 触发方式
+agent-compose scheduler trigger 1c06032063b2 daily-baseline（cron: 0 8 * * *，每日 08:00 CST，声明式 declarative，ENABLED=true）
+
+## 运行结果
+RUN ID: b301eb540f27968d6f23f3a9a003ef3b5f040dbf009ee5a8fc421f3289ad116c
+AGENT: baseline
+STATUS: succeeded
+SANDBOX: 00a5489477e7
+STARTED: 2026-09-07T07:03:29.695Z
+DURATION: 1m2.159s
+
+## 执行日志关键片段（scheduler logs）
+scheduler.run.started   scheduler=baseline trigger=c37f321380a2 run=b301eb540f27 run started
+- 运行 /workspace/security_baseline_check.sh 采集主机事实
+- 调用 OctoBus hello 能力 1 次：curl octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello（Content-Type: application/json），返回 HTTP 200 与正常 greeting
+- 中风险：PASS_MAX_DAYS=99999 口令永不过期、ufw 防火墙未安装、sshd_config 缺失导致 SSH 策略不可审计
+- 低风险：仅系统标准 SUID 程序，passwd/shadow/group 权限规范
+- 报告已写入 /workspace/baseline_report.txt
+scheduler.run.completed  scheduler=baseline trigger=c37f321380a2 run=b301eb540f27 run completed

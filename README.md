@@ -30,7 +30,7 @@
 
 ```
 .
-├── agent-compose.yml                      # project 定义（无明文密钥）
+├── agent-compose.yml                      # project 定义（含每日定时触发 scheduler，无明文密钥）
 ├── .env.example                           # 密钥模板（真实值写入 .env，不入库）
 ├── scripts/
 │   └── security_baseline_check.sh         # 确定性事实采集脚本（纯 bash）
@@ -68,6 +68,11 @@ agent-compose up
 
 # 触发一轮巡检
 agent-compose run baseline --prompt "$(cat run_prompt.txt)" --agent-workdir /workspace
+
+# 定时触发：项目已内置每日 08:00 的 cron scheduler（daily-baseline）
+# 可查询触发器 / 手动触发一次验证
+agent-compose scheduler ls
+agent-compose scheduler trigger <scheduler-id> daily-baseline
 ```
 
 > `run_prompt.txt` 见 `runs/` 下的执行 prompt（STEP1-4 流程，已同步保留在部署环境）。
@@ -86,6 +91,17 @@ cat /workspace/baseline_report.txt     # 评估报告
 - **仓库无明文密钥**：所有凭据走环境变量（`.env` 不入库），认证由 agent-compose daemon 的 LLM Facade 管理。
 - **关键路径经 OctoBus 网关**：能力调用显式走 `octobus:9000/...`，不绕过网关。
 - **重启自恢复**：容器 `restart: always` + systemd 开机自启。
+
+
+## 实施过程中遇到的问题及处理方式
+
+| 问题 | 现象与定位 | 解决方式 |
+| --- | --- | --- |
+| workspace 字段不兼容 | `provider: local` / 绝对路径均报校验失败 | 反推官方 schema，定位为 `provider: file` + 相对路径 `path: baseline-scripts`（相对容器工作目录 /data/work） |
+| API key 不能落入沙箱 | 直接 curl 验证了 key 有效，但怕密钥进仓库/沙箱 | 认证交由 agent-compose daemon 的 LLM Facade 托管，yml 与展示文件均不含 key，服务端 grep 校验 `no key leaked` |
+| 内存 1.6G 是硬约束 | 多沙箱会 OOM | 只起 1 个 sandbox（guest 镜像已预装 CLI），命令严格串行、加大超时，全程 free -m 监控可用内存 |
+| OctoBus 网络可达性 | 宿主 127.0.0.1:9000 在沙箱内不通 | 同网络用 DNS 名 `octobus:9000` 访问，网关链路透传正常 |
+| 定时触发未生效 | 初版 project 缺 scheduler，SCHEDULERS=0 | 在 agent 下补 `scheduler.enabled + triggers.cron`，重新 `up` 后 scheduler 数变为 1，定时触发 run 实测 succeeded |
 
 ## 实跑验收结果（摘要）
 

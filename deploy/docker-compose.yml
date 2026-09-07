@@ -1,0 +1,51 @@
+# Chaitin Agent-Compose + OctoBus 部署编排（服务器实际使用，脱敏版）
+# 说明：本文件与部署服务器 /opt/agent-compose/docker-compose.yml 一致，
+#      仅将密钥/口令替换为 ${VAR} 占位。真实值通过 .env 注入（不入库）。
+# 安全要求（对应 README"安全要求"章节）：
+#  - daemon 7410 与控制面 9100 均只绑定 127.0.0.1（不对公网开放）
+#  - UI 默认关闭（with-ui profile 不启用），避免无鉴权公开控制台
+
+services:
+  agent-compose:
+    image: ${AGENT_COMPOSE_IMAGE:-chaitin/agent-compose:latest}
+    container_name: agent-compose
+    restart: always
+    environment:
+      AGENT_COMPOSE_RUNTIME_BASE_URL: ${AGENT_COMPOSE_RUNTIME_BASE_URL:-http://agent-compose:7410}
+      # OctoBus capability gRPC proxy: listen on daemon container, target injected into guest
+      CAP_GRPC_LISTEN: ${CAP_GRPC_LISTEN:-0.0.0.0:9100}
+      CAP_GRPC_TARGET: ${CAP_GRPC_TARGET:-172.17.0.1:9100}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
+      - ${AGENT_COMPOSE_DATA_DIR:-./data}:/data
+      - ./.env:/data/work/.env:ro
+    working_dir: /data/work
+    ports:
+      - 127.0.0.1:7410:7410
+      # capability gRPC proxy bound to loopback only (not public)
+      - 127.0.0.1:9100:9100
+
+  fetch-guest-image:
+    image: ${DEFAULT_IMAGE:-chaitin/agent-compose-guest:latest}
+    command: ["true"]
+    restart: "no"
+
+  agent-compose-ui:
+    image: ${AGENT_COMPOSE_FRONTEND_IMAGE:-chaitin/agent-compose-ui:latest}
+    container_name: agent-compose-ui
+    profiles:
+      - with-ui
+    restart: always
+    depends_on:
+      - agent-compose
+    env_file:
+      - ./.env
+    volumes:
+      - ${AGENT_COMPOSE_UI_DATA_DIR:-./data/agent-compose-ui}:/data
+      - ${AGENT_COMPOSE_DATA_DIR:-./data}/sandboxes:/data/sandboxes:ro
+    environment:
+      JUPYTER_PROXY_BASE: ${JUPYTER_PROXY_BASE:-/jupyter}
+      NGINX_JUPYTER_PROXY_BASE: ${JUPYTER_PROXY_BASE:-/jupyter}
+    ports:
+      - "${AGENT_COMPOSE_HTTP_PORT:-80}:8000/tcp"

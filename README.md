@@ -30,23 +30,39 @@
 
 ```
 .
+├── deploy/
+│   ├── docker-compose.yml                 # 部署编排：agent-compose daemon + guest + UI（脱敏，服务器实际使用）
+│   └── .env.example                       # 部署环境变量模板
 ├── agent-compose.yml                      # project 定义（含每日定时触发 scheduler，无明文密钥）
-├── .env.example                           # 密钥模板（真实值写入 .env，不入库）
+├── .env.example                           # LLM 密钥模板（真实值写入服务器 .env，不入库）
 ├── scripts/
 │   └── security_baseline_check.sh         # 确定性事实采集脚本（纯 bash）
 ├── knowledge/
-│   └── security-baseline-rules.md         # 安全基线知识规则集
+│   └── security-baseline-rules.md         # 安全基线知识规则集（实操经验版）
 └── runs/
     ├── baseline_report.txt                # 实跑评估报告（示例输出）
-    └── run_74c6b760_full_logs.txt         # Agent 完整运行日志
+    ├── run_74c6b760_full_logs.txt         # Agent 完整运行日志
+    └── README_考核结果.md                 # 考核结果要点
 ```
 
+**deploy/ 与根目录 .env 的关系**：`deploy/docker-compose.yml` 是"怎么把平台跑起来"（daemon/guest/UI 编排），对应服务器 `/opt/agent-compose/`；根目录 `agent-compose.yml` 是"跑什么 project"（我们的安全基线巡检 agent），对应 `/opt/agent-compose/data/work/`。两处独立。
+
 ## 快速开始
+
+### 0. 一键启动平台（deploy/docker-compose.yml）
+
+```bash
+cd deploy
+cp .env.example .env     # 填入真实 LLM_API_KEY / AUTH_*
+docker compose up -d     # 起 agent-compose daemon + guest 镜像（UI 默认关闭）
+# 端口只绑定 127.0.0.1:7410 / 9100，不对公网开放
+# agent-compose daemon 验证：docker ps 中 agent-compose 为 running
+```
 
 ### 1. 前置环境
 
 - 部署 [Chaitin Agent-Compose](https://chaitin.com) 与 OctoBus，二者处于同一 Docker 网络（默认 `agent-compose_default`）。
-- 准备 `chaitin/agent-compose-guest` 沙箱镜像。
+- 准备 `chaitin/agent-compose-guest` 沙箱镜像（`deploy/docker-compose.yml` 中 `fetch-guest-image` 服务会自动拉取）。
 
 ### 2. 配置 LLM（密钥不落盘）
 

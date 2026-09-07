@@ -149,3 +149,61 @@ echo ""
 echo "===== SECURITY BASELINE EVAL (deterministic) ====="
 cat "$SCORE_FILE"
 echo "===== SECURITY BASELINE EVAL END ====="
+
+# ============================================================
+# [TRACK] cross-run tracking of NOT-CLOSED items (命题: 跟踪未闭环项)
+# For each scoring item, persist its FAIL/WARN presence to a state
+# file. On next run, diff against last run to classify each open
+# item as NEW / STILL-OPEN (未闭环) / CLOSED (已闭环). This gives
+# the LLM the "未闭环项" input for cross-run tracing, and keeps the
+# deterministic part in code (not model memory).
+# ============================================================
+STATE_FILE="${2:-/tmp/security_baseline_state.txt}"
+
+# capture this run's open (FAIL/WARN) items, excluding INFO/OK
+open_now=$(awk -F'|' '$2 ~ /(FAIL|WARN)/ {gsub(/[ \t]/,"",$1); sub(/^\[EVAL\]/,"",$1); print $1}' "$SCORE_FILE")
+
+# load last run's open items from the existing state file (if any)
+open_prev=""
+if [ -f "$STATE_FILE" ]; then
+  open_prev=$(cat "$STATE_FILE")
+fi
+
+echo "" >> "$SCORE_FILE"
+echo "===== NOT-CLOSED TRACK (跨轮次跟踪) =====" >> "$SCORE_FILE"
+echo "run_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$SCORE_FILE"
+
+now_list=$(printf '%s\n' $open_now)
+prev_list=$(printf '%s\n' $open_prev)
+
+# CLOSED: was open last run, now not
+if [ -n "$prev_list" ]; then
+  while IFS= read -r it; do
+    [ -z "$it" ] && continue
+    if ! printf '%s\n' "$now_list" | grep -qx "$it"; then
+      echo "CLOSED  | $it | 已闭环（上次为未闭环项，本轮已不存在）" >> "$SCORE_FILE"
+    fi
+  done <<< "$prev_list"
+fi
+
+# NEW / STILL-OPEN for each open item this run
+if [ -n "$now_list" ]; then
+  while IFS= read -r it; do
+    [ -z "$it" ] && continue
+    if printf '%s\n' "$prev_list" | grep -qx "$it"; then
+      echo "STILL_OPEN | $it | 仍未闭环（与上轮一致的未闭环项）" >> "$SCORE_FILE"
+    else
+      echo "NEW_OPEN   | $it | 本轮回新出现未闭环项" >> "$SCORE_FILE"
+    fi
+  done <<< "$now_list"
+else
+  echo "NO_OPEN_ITEMS | 本轮无未闭环项" >> "$SCORE_FILE"
+fi
+
+# persist this run as the new baseline for next comparison
+printf '%s\n' $open_now > "$STATE_FILE"
+cp "$SCORE_FILE" "$SCORE_FILE.full"
+
+echo ""
+echo "===== NOT-CLOSED TRACK END ====="
+cat >> "$SCORE_FILE" /dev/null

@@ -83,7 +83,31 @@ service list →
 
 ---
 
-## 3. 一句话口径
+## 3. 运行记录在哪查（3.4-4 完整执行一轮 + 可查记录）
+
+> **服务器现场**：SSH 登录后查看
+> ```bash
+> ls -lt /opt/agent-compose/data/work/
+> cat  /opt/agent-compose/data/work/baseline_report.txt   # 评估报告：采集+OctoBus调用JSON+逐项评估+整改
+> cat  /opt/agent-compose/data/work/run_74c6b760_full_logs.txt  # 完整运行日志(267行)
+> ```
+
+> **GitHub 仓库**（对应存档）：`runs/` 目录
+> ```
+> runs/baseline_report.txt
+> runs/run_74c6b760_full_logs.txt
+> runs/run_prompt.txt
+> runs/scheduler_daily_run_log.txt
+> runs/README_考核结果.md
+> ```
+
+> `baseline_report.txt` 内保留了 STEP2 经 OctoBus 调用能力的**原始 JSON 响应**
+> （`{"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}`），
+> 即完整执行一轮 + 可查证据闭环。
+
+---
+
+## 4. 一句话口径
 
 > 通过 `agent-compose project/scheduler ls` 可查询到项目 `security-baseline`
 > 与定时触发器 `daily-baseline`；通过 `octobus capset/service list` 可查询到

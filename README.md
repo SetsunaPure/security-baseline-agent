@@ -36,7 +36,9 @@
 ├── agent-compose.yml                      # project 定义（含每日定时触发 scheduler，无明文密钥）
 ├── .env.example                           # LLM 密钥模板（真实值写入服务器 .env，不入库）
 ├── scripts/
-│   └── security_baseline_check.sh         # 确定性事实采集脚本（纯 bash）
+│   └── security_baseline_check.sh         # 确定性事实采集+评分（纯 bash）
+├── docs/
+│   └── QUERY_GUIDE.md                     # 3.4-3 交付自检：项目/触发器/能力集/方法的现场查询命令
 ├── knowledge/
 │   └── security-baseline-rules.md         # 安全基线知识规则集（实操经验版）
 └── runs/

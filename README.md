@@ -140,3 +140,9 @@ cat /workspace/baseline_report.txt     # 评估报告
 - 重启 daemon 后 project/agent 保留、沙箱重新挂接保持 running、报告仍在。
 
 详见 `runs/baseline_report.txt` 与 `runs/run_74c6b760_full_logs.txt`。
+## 实跑验收结果（2026-09-07 重跑验证，Run `88fbf6d3`）
+
+- Run `88fbf6d3` ：全链路 succeeded，exit=0。
+- 脚本已核验为仓库当前版本（SHA256 `481693dc...`，含 COLLECT+EVAL+TRACK 三段；评分 EVAL 显示 `RISK_POINTS=45 / OVERALL_LEVEL=MEDIUM`，10 项确定性打分明细均在日志中）。
+- STEP2 OctoBus 网关调用返回 `{"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}`，确认能力通道经网关路由、未绕过。
+- 逐项评估落盘 `baseline_report.txt`；完整运行日志见 `runs/run_88fbf6d3_full_logs.txt`（509 行，含 STEP1 采集明细与 STEP3 逐项风险/处置建议）。

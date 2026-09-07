@@ -1,0 +1,509 @@
+baseline-run-88fbf6d36e67 | >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+baseline-run-88fbf6d36e67 | You are a host security baseline inspector. Your job is INSPECT, not change. Do not modify any system config; only inspect and report.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | Follow these steps strictly:
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | STEP 1 (deterministic data collection via script): Look for the prepared collection script in your workspace: security_baseline_check.sh . Run it with:
+baseline-run-88fbf6d36e67 |   bash security_baseline_check.sh
+baseline-run-88fbf6d36e67 | This script (a plain bash script, not an LLM) collects objective facts about SSH root login policy, ufw firewall rules, password aging policy, SUID binaries, open listening ports, and critical file permissions. It does the raw deterministic collection; you (the LLM) do NOT need to re-derive these facts yourself.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | If the script is missing or fails, create it with the equivalent checks and run it.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | STEP 2 (verify capability gateway via OctoBus): To confirm the agent's capability channel is routed through the OctoBus gateway, invoke the hello capability once with curl:
+baseline-run-88fbf6d36e67 |   curl -s -m 8 -X POST http://octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello -H 'Content-Type: application/json' -d '{"name":"security-agent"}'
+baseline-run-88fbf6d36e67 | Record the JSON response. This proves the agent reaches capabilities not by bypassing the gateway.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | STEP 3 (LLM risk assessment): Based strictly on the facts collected in STEP 1, produce a concise security baseline assessment report. For each finding give: the fact, a risk level (高/中/低 High/Medium/Low), and a concrete remediation suggestion. Cover at least: SSH root login & password auth, firewall, password policy, world-writable SUID, exposed ports, shadow/group file permissions.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | STEP 4 (persist result): Write the full assessment text (including the STEP 2 OctoBus response) to a file named baseline_report.txt in your workspace, and also print it.
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | Output language: Chinese for the prose, keep commands/code in English.
+baseline-run-88fbf6d36e67 | <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+baseline-run-88fbf6d36e67 | Model metadata for `deepseek-chat` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+baseline-run-88fbf6d36e67 | 我先查看工作区中的收集脚本并执行它。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc 'ls -la /workspace && test -f /workspace/security_baseline_check.sh && echo FOUND || echo MISSING'
+baseline-run-88fbf6d36e67 | total 28
+baseline-run-88fbf6d36e67 | drwx------ 2 root root  4096 Sep  7 09:43 .
+baseline-run-88fbf6d36e67 | drwxr-xr-x 1 root root  4096 Sep  7 09:43 ..
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root     0 Sep  7 09:43 .env
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root  1226 Sep  7 09:43 bl_eval.txt
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root    71 Sep  7 09:43 bl_state.txt
+baseline-run-88fbf6d36e67 | -rwxr-xr-x 1 root root 11919 Sep  7 09:43 security_baseline_check.sh
+baseline-run-88fbf6d36e67 | FOUND
+baseline-run-88fbf6d36e67 | 脚本已存在，我先查看内容再运行。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc "sed -n '1,200p' /workspace/security_baseline_check.sh"
+baseline-run-88fbf6d36e67 | #!/bin/bash
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | # Security Baseline Check - deterministic FACT COLLECTION + SCORING + TRACK.
+baseline-run-88fbf6d36e67 | #
+baseline-run-88fbf6d36e67 | # Three responsibilities (kept separate; each maps to a rating rule):
+baseline-run-88fbf6d36e67 | #   [COLLECT]  gather objective facts about the host (no judgment).
+baseline-run-88fbf6d36e67 | #              Includes FAILBACK sampling: when a primary tool is missing
+baseline-run-88fbf6d36e67 | #              (ss/netstat/ufw/sshd) it falls back to a read-only path
+baseline-run-88fbf6d36e67 | #              (/proc/net, sshd -T, grep) rather than silently skipping.
+baseline-run-88fbf6d36e67 | #   [EVAL]     deterministic RISK SCORING by fixed thresholds (pure code).
+baseline-run-88fbf6d36e67 | #   [TRACK]    cross-run NOT-CLOSED item tracking for 未闭环项 follow-up.
+baseline-run-88fbf6d36e67 | # The LLM only does the fuzzy part: remediation, ordering, narrative.
+baseline-run-88fbf6d36e67 | #
+baseline-run-88fbf6d36e67 | # Every judgement stated in knowledge/security-baseline-rules.md is
+baseline-run-88fbf6d36e67 | # consumed here so no documented rule is left "declared but unused".
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | SCORE_FILE="${1:-/tmp/security_baseline_eval.txt}"
+baseline-run-88fbf6d36e67 | STATE_FILE="${2:-/tmp/security_baseline_state.txt}"
+baseline-run-88fbf6d36e67 | total=0
+baseline-run-88fbf6d36e67 | risk_points=0
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "===== SECURITY BASELINE COLLECTION START ====="
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # ---------- [COLLECT] raw facts ----------
+baseline-run-88fbf6d36e67 | echo "[1] SSH root login / password policy (effective via sshd -T, file fallback)"
+baseline-run-88fbf6d36e67 | if command -v sshd >/dev/null 2>&1; then
+baseline-run-88fbf6d36e67 |   # effective values (respects Include/*.d overrides)
+baseline-run-88fbf6d36e67 |   sshd -T 2>/dev/null | grep -Ei "^(permitrootlogin|passwordauthentication|permitemptypasswords|pubkeyauthentication)" \
+baseline-run-88fbf6d36e67 |     || echo "  (sshd -T produced no match)"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   # fallback: no sshd binary installed -> read config file only
+baseline-run-88fbf6d36e67 |   grep -E "^(PermitRootLogin|PasswordAuthentication|PermitEmptyPasswords|PubkeyAuthentication)" /etc/ssh/sshd_config 2>/dev/null \
+baseline-run-88fbf6d36e67 |     || echo "  (no sshd installed, no sshd_config match)"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[2] Firewall status (ufw / iptables / nftables)"
+baseline-run-88fbf6d36e67 | if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+baseline-run-88fbf6d36e67 |   echo "  ufw: active"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   echo "  ufw: not active or not installed"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | if command -v iptables >/dev/null 2>&1; then iptables -L -n 2>/dev/null | grep -qE "ACCEPT|DROP|REJECT" && echo "  iptables: rules present"; fi
+baseline-run-88fbf6d36e67 | if command -v nft >/dev/null 2>&1; then nft list ruleset 2>/dev/null | grep -q "table" && echo "  nftables: rules present"; fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[3] Password aging policy (/etc/login.defs)"
+baseline-run-88fbf6d36e67 | grep -vE "^#|^$" /etc/login.defs 2>/dev/null | grep -iE "PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_WARN_AGE" || echo "  (no PASS_* policy found)"
+baseline-run-88fbf6d36e67 | echo "  -- existing accounts effective aging (chage -l, first 10) --"
+baseline-run-88fbf6d36e67 | if command -v chage >/dev/null 2>&1; then
+baseline-run-88fbf6d36e67 |   # login.defs only applies to NEW accounts; verify current users actually have the policy landed
+baseline-run-88fbf6d36e67 |   awk -F: '$3>=1000 && $7!="/usr/sbin/nologin" && $7!="/bin/false" {print $1}' /etc/passwd 2>/dev/null | head -10 | while read -r u; do
+baseline-run-88fbf6d36e67 |     [ -n "$u" ] && echo "  $u: $(chage -l "$u" 2>/dev/null | grep -iE 'Maximum number of days|Minimum number of days|Warning' | tr '\n' ' ')"
+baseline-run-88fbf6d36e67 |   done
+baseline-run-88fbf6d36e67 |   awk -F: '$3>=1000 && $7!="/usr/sbin/nologin" && $7!="/bin/false" {n++} END{print "  total login-capable users scanned above (first 10 shown)"}' /etc/passwd 2>/dev/null
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   echo "  chage not installed"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[4] World-writable SUID/SGID binaries (count + first 20 on / filesystem)"
+baseline-run-88fbf6d36e67 | suid_count=$(find / -xdev -type f -perm /4000 2>/dev/null | wc -l)
+baseline-run-88fbf6d36e67 | echo "  SUID count: ${suid_count}"
+baseline-run-88fbf6d36e67 | # privilege-escalation surface:  SUID/SGID AND (not root-owned OR world-writable)
+baseline-run-88fbf6d36e67 | privesc=$(find / -xdev -type f -perm /6000 \( ! -user root -o -perm -0002 \) 2>/dev/null)
+baseline-run-88fbf6d36e67 | privesc_count=$(printf '%s\n' "$privesc" | grep -c . )
+baseline-run-88fbf6d36e67 | echo "  privesc-surface SUID (non-root owner or world-writable): ${privesc_count}"
+baseline-run-88fbf6d36e67 | printf '%s\n' "$privesc" | head -20
+baseline-run-88fbf6d36e67 | find / -xdev -type f -perm /4000 2>/dev/null | head -20 || echo "  (find failed)"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[5] Open listening TCP/UDP ports (ss -> netstat -> /proc/net fallback)"
+baseline-run-88fbf6d36e67 | port_view=""
+baseline-run-88fbf6d36e67 | if command -v ss >/dev/null 2>&1; then
+baseline-run-88fbf6d36e67 |   port_view=$(ss -tulnp 2>/dev/null)
+baseline-run-88fbf6d36e67 |   echo "  method: ss"
+baseline-run-88fbf6d36e67 | elif command -v netstat >/dev/null 2>&1; then
+baseline-run-88fbf6d36e67 |   port_view=$(netstat -tulnp 2>/dev/null)
+baseline-run-88fbf6d36e67 |   echo "  method: netstat"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   echo "  method: /proc/net/tcp,/proc/net/udp (ss/netstat absent)"
+baseline-run-88fbf6d36e67 |   for f in tcp tcp6 udp udp6; do
+baseline-run-88fbf6d36e67 |     if [ -r "/proc/net/$f" ]; then
+baseline-run-88fbf6d36e67 |       awk 'NR>1 && $4=="0A"{print FILENAME": LISTEN "$2}' /proc/net/$f 2>/dev/null
+baseline-run-88fbf6d36e67 |     fi
+baseline-run-88fbf6d36e67 |   done
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | printf '%s\n' "$port_view" | head -25
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[6] /etc/passwd and /etc/shadow permissions"
+baseline-run-88fbf6d36e67 | ls -l /etc/passwd /etc/shadow /etc/group 2>/dev/null
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[7] /etc/crontab and system crontabs permissions"
+baseline-run-88fbf6d36e67 | ls -l /etc/crontab 2>/dev/null
+baseline-run-88fbf6d36e67 | ls -l /etc/cron.d 2>/dev/null
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "[8] Running as root? / whoami"
+baseline-run-88fbf6d36e67 | whoami
+baseline-run-88fbf6d36e67 | id
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "===== SECURITY BASELINE COLLECTION END ====="
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | # [EVAL] deterministic risk scoring (code, fixed thresholds)
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | rm -f "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | : > "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | grade() { # $1=item $2=level(OK/WARN/FAIL) $3=points $4=reason
+baseline-run-88fbf6d36e67 |   echo "[EVAL] $1 | $2 | +$3 | $4" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 |   risk_points=$((risk_points + $3))
+baseline-run-88fbf6d36e67 |   total=$((total + 1))
+baseline-run-88fbf6d36e67 | }
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [1] SSH: use EFFECTIVE values (sshd -T) when available, else config file
+baseline-run-88fbf6d36e67 | ssh_eff=$( { sshd -T 2>/dev/null || grep -E "^(PermitRootLogin|PasswordAuthentication)" /etc/ssh/sshd_config 2>/dev/null; } \
+baseline-run-88fbf6d36e67 |   | grep -Ei "^(permitrootlogin|passwordauthentication)" | tr -d ' ' )
+baseline-run-88fbf6d36e67 | case "$ssh_eff" in
+baseline-run-88fbf6d36e67 |   *"permitrootlogin:yes"*|*"permitrootlogin yes"*|*"PermitRootLogin=yes"*|*"passwordauthentication:yes"*|*"passwordauthentication yes"*|*"PasswordAuthentication=yes"*)
+baseline-run-88fbf6d36e67 |     grade "1-ssh-auth" "FAIL" 25 "PermitRootLogin or PasswordAuthentication effective=yes" ;;
+baseline-run-88fbf6d36e67 |   *)
+baseline-run-88fbf6d36e67 |     grade "1-ssh-auth" "OK" 0 "no insecure ssh auth effective=yes" ;;
+baseline-run-88fbf6d36e67 | esac
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [2] Firewall: fail=none of ufw/iptables/nftables active
+baseline-run-88fbf6d36e67 | if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+baseline-run-88fbf6d36e67 |   grade "2-firewall" "OK" 0 "ufw active"
+baseline-run-88fbf6d36e67 | elif command -v iptables >/dev/null 2>&1 && iptables -L -n 2>/dev/null | grep -qE "ACCEPT|DROP|REJECT"; then
+baseline-run-88fbf6d36e67 |   grade "2-firewall" "OK" 0 "iptables rules present"
+baseline-run-88fbf6d36e67 | elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q "table"; then
+baseline-run-88fbf6d36e67 |   grade "2-firewall" "OK" 0 "nftables rules present"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "2-firewall" "FAIL" 25 "no active firewall rule detected (ufw/iptables/nftables)"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [3] Password aging: MAX>90 warn; MIN=0 warn; MAX undefined fail.
+baseline-run-88fbf6d36e67 | #     Also account for whether policy landed on EXISTING users via chage.
+baseline-run-88fbf6d36e67 | pass_max=$(grep -iE "^PASS_MAX_DAYS" /etc/login.defs 2>/dev/null | awk '{print $2}' | head -1)
+baseline-run-88fbf6d36e67 | pass_min=$(grep -iE "^PASS_MIN_DAYS" /etc/login.defs 2>/dev/null | awk '{print $2}' | head -1)
+baseline-run-88fbf6d36e67 | if [ -z "$pass_max" ]; then
+baseline-run-88fbf6d36e67 |   grade "3-passwd-aging" "FAIL" 20 "PASS_MAX_DAYS undefined in login.defs"
+baseline-run-88fbf6d36e67 | elif [ "$pass_max" -gt 90 ]; then
+baseline-run-88fbf6d36e67 |   grade "3-passwd-aging" "WARN" 10 "PASS_MAX_DAYS=${pass_max} > 90" 
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "3-passwd-aging" "OK" 0 "PASS_MAX_DAYS=${pass_max}"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | if [ "$pass_min" = "0" ]; then
+baseline-run-88fbf6d36e67 |   grade "3b-passwd-min" "WARN" 5 "PASS_MIN_DAYS=0 (immediate password changes)"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "3b-passwd-min" "OK" 0 "PASS_MIN_DAYS=${pass_min:-not set}"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # chage landed check: login.defs only affects NEW users; if any login-capable
+baseline-run-88fbf6d36e67 | # account is missing an effective max, flag as "policy not landed" warn.
+baseline-run-88fbf6d36e67 | chage_not_landed=0
+baseline-run-88fbf6d36e67 | if command -v chage >/dev/null 2>&1; then
+baseline-run-88fbf6d36e67 |   while read -r u; do
+baseline-run-88fbf6d36e67 |     [ -z "$u" ] && continue
+baseline-run-88fbf6d36e67 |     cmax=$(chage -l "$u" 2>/dev/null | grep -i "Maximum number of days" | awk '{print $NF}')
+baseline-run-88fbf6d36e67 |     if [ "$cmax" = "never" ] || [ -z "$cmax" ]; then chage_not_landed=$((chage_not_landed+1)); fi
+baseline-run-88fbf6d36e67 |   done < <(awk -F: '$3>=1000 && $7!="/usr/sbin/nologin" && $7!="/bin/false" {print $1}' /etc/passwd 2>/dev/null)
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | if [ "$chage_not_landed" -gt 0 ]; then
+baseline-run-88fbf6d36e67 |   grade "3c-chage-landed" "WARN" 5 "${chage_not_landed} existing account(s) lack effective max-age policy (login.defs only affects new users)"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "3c-chage-landed" "OK" 0 "existing accounts have effective aging policy"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [4] SUID/SGID: privesc surface (non-root owner OR world-writable) is the real risk
+baseline-run-88fbf6d36e67 | if [ "${privesc_count:-0}" -gt 0 ]; then
+baseline-run-88fbf6d36e67 |   grade "4-suid-privesc" "FAIL" 20 "found ${privesc_count} SUID/SGID with non-root owner or world-writable (escalation surface)"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "4-suid-privesc" "OK" 0 "no world-writable/non-root SUID escalation surface"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | if [ "$suid_count" -gt 20 ]; then
+baseline-run-88fbf6d36e67 |   grade "4b-suid-count" "WARN" 5 "total SUID ${suid_count} > 20, review list"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "4b-suid-count" "OK" 0 "SUID count ${suid_count} <= 20"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [5] Open ports: distinguish externally-exposed (0.0.0.0/::) vs loopback (127.)
+baseline-run-88fbf6d36e67 | ext_ports=$( { ss -tulnp 2>/dev/null || netstat -tulnp 2>/dev/null; } | grep -cE "0\.0\.0\.0|\[?::\]")
+baseline-run-88fbf6d36e67 | loop_ports=$( { ss -tulnp 2>/dev/null || netstat -tulnp 2>/dev/null; } | grep -cE "127\.0\.0\.1|\[::1\]")
+baseline-run-88fbf6d36e67 | open_ports=$(( ext_ports + loop_ports ))
+baseline-run-88fbf6d36e67 | if [ "$ext_ports" -gt 3 ]; then
+baseline-run-88fbf6d36e67 |   grade "5-open-ports" "WARN" 10 "externally-exposed listeners (0.0.0.0/::) = ${ext_ports} > 3"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "5-open-ports" "OK" 0 "externally-exposed listeners = ${ext_ports} <= 3"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [6] Critical file perms
+baseline-run-88fbf6d36e67 | shadow_perms=$(stat -c %a /etc/shadow 2>/dev/null)
+baseline-run-88fbf6d36e67 | if [ "$shadow_perms" = "600" ] || [ "$shadow_perms" = "640" ] || [ "$shadow_perms" = "000" ]; then
+baseline-run-88fbf6d36e67 |   grade "6-critical-perms" "OK" 0 "shadow perms ${shadow_perms} restricted"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "6-critical-perms" "FAIL" 20 "shadow perms ${shadow_perms} not restricted (expect 600/640/000)"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [7] Cron perms
+baseline-run-88fbf6d36e67 | cron_perms=$(stat -c %a /etc/crontab 2>/dev/null)
+baseline-run-88fbf6d36e67 | g_bit=$(( (10#${cron_perms:-0} / 10) % 10 ))
+baseline-run-88fbf6d36e67 | o_bit=$(( 10#${cron_perms:-0} % 10 ))
+baseline-run-88fbf6d36e67 | if [ -z "$cron_perms" ]; then
+baseline-run-88fbf6d36e67 |   grade "7-cron-perms" "WARN" 5 "crontab not found or unreadable"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc "sed -n '200,400p' /workspace/security_baseline_check.sh"
+baseline-run-88fbf6d36e67 |   grade "7-cron-perms" "WARN" 5 "crontab not found or unreadable"
+baseline-run-88fbf6d36e67 | elif [ "$g_bit" -ge 6 ] || [ "$o_bit" -ge 6 ]; then
+baseline-run-88fbf6d36e67 |   grade "7-cron-perms" "FAIL" 15 "crontab ${cron_perms} is group/other writable"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   grade "7-cron-perms" "OK" 0 "crontab ${cron_perms} not group/other writable"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # [8] Running as root: context flag only (not scored)
+baseline-run-88fbf6d36e67 | echo "[EVAL] 8-identity | INFO | +0 | running user: $(whoami) (context only)" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # ---------- summary ----------
+baseline-run-88fbf6d36e67 | echo "" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | echo "TOTAL_ITEMS=${total} RISK_POINTS=${risk_points}" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | if [ "$risk_points" -ge 60 ]; then
+baseline-run-88fbf6d36e67 |   echo "OVERALL_LEVEL=HIGH" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | elif [ "$risk_points" -ge 30 ]; then
+baseline-run-88fbf6d36e67 |   echo "OVERALL_LEVEL=MEDIUM" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   echo "OVERALL_LEVEL=LOW" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo ""
+baseline-run-88fbf6d36e67 | echo "===== SECURITY BASELINE EVAL (deterministic) ====="
+baseline-run-88fbf6d36e67 | cat "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | echo "===== SECURITY BASELINE EVAL END ====="
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | # [TRACK] cross-run tracking of NOT-CLOSED items (命题: 跟踪未闭环项)
+baseline-run-88fbf6d36e67 | # ============================================================
+baseline-run-88fbf6d36e67 | open_now=$(awk -F'|' '$2 ~ /(FAIL|WARN)/ {gsub(/[ \t]/,"",$1); sub(/^\[EVAL\]/,"",$1); print $1}' "$SCORE_FILE")
+baseline-run-88fbf6d36e67 | open_prev=""
+baseline-run-88fbf6d36e67 | if [ -f "$STATE_FILE" ]; then
+baseline-run-88fbf6d36e67 |   open_prev=$(cat "$STATE_FILE")
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo "" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | echo "===== NOT-CLOSED TRACK (跨轮次跟踪) =====" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | echo "run_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | now_list=$(printf '%s\n' $open_now)
+baseline-run-88fbf6d36e67 | prev_list=$(printf '%s\n' $open_prev)
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | if [ -n "$prev_list" ]; then
+baseline-run-88fbf6d36e67 |   while IFS= read -r it; do
+baseline-run-88fbf6d36e67 |     [ -z "$it" ] && continue
+baseline-run-88fbf6d36e67 |     if ! printf '%s\n' "$now_list" | grep -qx "$it"; then
+baseline-run-88fbf6d36e67 |       echo "CLOSED  | $it | 已闭环（上次为未闭环项，本轮已不存在）" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 |     fi
+baseline-run-88fbf6d36e67 |   done <<< "$prev_list"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | if [ -n "$now_list" ]; then
+baseline-run-88fbf6d36e67 |   while IFS= read -r it; do
+baseline-run-88fbf6d36e67 |     [ -z "$it" ] && continue
+baseline-run-88fbf6d36e67 |     if printf '%s\n' "$prev_list" | grep -qx "$it"; then
+baseline-run-88fbf6d36e67 |       echo "STILL_OPEN | $it | 仍未闭环（与上轮一致的未闭环项）" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 |     else
+baseline-run-88fbf6d36e67 |       echo "NEW_OPEN   | $it | 本轮回新出现未闭环项" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 |     fi
+baseline-run-88fbf6d36e67 |   done <<< "$now_list"
+baseline-run-88fbf6d36e67 | else
+baseline-run-88fbf6d36e67 |   echo "NO_OPEN_ITEMS | 本轮无未闭环项" >> "$SCORE_FILE"
+baseline-run-88fbf6d36e67 | fi
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | printf '%s\n' $open_now > "$STATE_FILE"
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | echo ""
+baseline-run-88fbf6d36e67 | echo "===== NOT-CLOSED TRACK END ====="运行收集脚本（STEP 1），同时在 STEP 2 中调用 OctoBus hello 能力。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc 'cd /workspace && bash security_baseline_check.sh 2>&1'
+baseline-run-88fbf6d36e67 |   SUID count: 8
+baseline-run-88fbf6d36e67 |   privesc-surface SUID (non-root owner or world-writable): 0
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | /usr/bin/su
+baseline-run-88fbf6d36e67 | /usr/bin/chfn
+baseline-run-88fbf6d36e67 | /usr/bin/mount
+baseline-run-88fbf6d36e67 | /usr/bin/passwd
+baseline-run-88fbf6d36e67 | /usr/bin/gpasswd
+baseline-run-88fbf6d36e67 | /usr/bin/chsh
+baseline-run-88fbf6d36e67 | /usr/bin/umount
+baseline-run-88fbf6d36e67 | /usr/bin/newgrp
+baseline-run-88fbf6d36e67 | [5] Open listening TCP/UDP ports (ss -> netstat -> /proc/net fallback)
+baseline-run-88fbf6d36e67 |   method: /proc/net/tcp,/proc/net/udp (ss/netstat absent)
+baseline-run-88fbf6d36e67 | /proc/net/tcp: LISTEN 0B00007F:9227
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | [6] /etc/passwd and /etc/shadow permissions
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root   434 Aug 24 00:00 /etc/group
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root   839 Aug 24 00:00 /etc/passwd
+baseline-run-88fbf6d36e67 | -rw-r----- 1 root shadow 474 Aug 24 00:00 /etc/shadow
+baseline-run-88fbf6d36e67 | [7] /etc/crontab and system crontabs permissions
+baseline-run-88fbf6d36e67 | total 4
+baseline-run-88fbf6d36e67 | -rw-r--r-- 1 root root 201 Jun  6  2025 e2scrub_all
+baseline-run-88fbf6d36e67 | [8] Running as root? / whoami
+baseline-run-88fbf6d36e67 | root
+baseline-run-88fbf6d36e67 | uid=0(root) gid=0(root) groups=0(root)
+baseline-run-88fbf6d36e67 | ===== SECURITY BASELINE COLLECTION END =====
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ===== SECURITY BASELINE EVAL (deterministic) =====
+baseline-run-88fbf6d36e67 | [EVAL] 1-ssh-auth | OK | +0 | no insecure ssh auth effective=yes
+baseline-run-88fbf6d36e67 | [EVAL] 2-firewall | FAIL | +25 | no active firewall rule detected (ufw/iptables/nftables)
+baseline-run-88fbf6d36e67 | [EVAL] 3-passwd-aging | WARN | +10 | PASS_MAX_DAYS=99999 > 90
+baseline-run-88fbf6d36e67 | [EVAL] 3b-passwd-min | WARN | +5 | PASS_MIN_DAYS=0 (immediate password changes)
+baseline-run-88fbf6d36e67 | [EVAL] 3c-chage-landed | OK | +0 | existing accounts have effective aging policy
+baseline-run-88fbf6d36e67 | [EVAL] 4-suid-privesc | OK | +0 | no world-writable/non-root SUID escalation surface
+baseline-run-88fbf6d36e67 | [EVAL] 4b-suid-count | OK | +0 | SUID count 8 <= 20
+baseline-run-88fbf6d36e67 | [EVAL] 5-open-ports | OK | +0 | externally-exposed listeners = 0 <= 3
+baseline-run-88fbf6d36e67 | [EVAL] 6-critical-perms | OK | +0 | shadow perms 640 restricted
+baseline-run-88fbf6d36e67 | [EVAL] 7-cron-perms | WARN | +5 | crontab not found or unreadable
+baseline-run-88fbf6d36e67 | [EVAL] 8-identity | INFO | +0 | running user: root (context only)
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | TOTAL_ITEMS=10 RISK_POINTS=45
+baseline-run-88fbf6d36e67 | OVERALL_LEVEL=MEDIUM
+baseline-run-88fbf6d36e67 | ===== SECURITY BASELINE EVAL END =====
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ===== NOT-CLOSED TRACK END =====
+baseline-run-88fbf6d36e67 | STEP 1 已完成。为确保报告中描述准确，我做少量只读核查（不修改任何配置）。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc 'echo "--- tools ---"; for t in sshd ufw iptables nft ss netstat chage ssh; do command -v $t >/dev/null 2>&1 && echo "$t: $(command -v $t)" || echo "$t: MISSING"; done; echo "--- /etc/ssh ---"; ls -la /etc/ssh 2>&1; echo "--- crontab ---"; ls -l /etc/crontab 2>&1; echo "--- login.defs pass ---"; grep -iE "''^PASS_(MAX|MIN|WARN)" /etc/login.defs 2>&1'
+baseline-run-88fbf6d36e67 | --- tools ---
+baseline-run-88fbf6d36e67 | sshd: MISSING
+baseline-run-88fbf6d36e67 | ufw: MISSING
+baseline-run-88fbf6d36e67 | iptables: MISSING
+baseline-run-88fbf6d36e67 | nft: MISSING
+baseline-run-88fbf6d36e67 | ss: MISSING
+baseline-run-88fbf6d36e67 | netstat: MISSING
+baseline-run-88fbf6d36e67 | chage: /usr/bin/chage
+baseline-run-88fbf6d36e67 | ssh: MISSING
+baseline-run-88fbf6d36e67 | --- /etc/ssh ---
+baseline-run-88fbf6d36e67 | ls: cannot access '/etc/ssh': No such file or directory
+baseline-run-88fbf6d36e67 | --- crontab ---
+baseline-run-88fbf6d36e67 | ls: cannot access '/etc/crontab': No such file or directory
+baseline-run-88fbf6d36e67 | --- login.defs pass ---
+baseline-run-88fbf6d36e67 | PASS_MAX_DAYS	99999
+baseline-run-88fbf6d36e67 | PASS_MIN_DAYS	0
+baseline-run-88fbf6d36e67 | PASS_WARN_AGE	7
+baseline-run-88fbf6d36e67 | 收集结果已就绪。现在执行 STEP 2：调用 OctoBus hello 能力验证能力通道。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc "curl -s -m 8 -X POST http://octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello -H 'Content-Type: application/json' -d '{\"name\":\"security-agent\"}'; echo"
+baseline-run-88fbf6d36e67 | {"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}
+baseline-run-88fbf6d36e67 | STEP 1、2 均完成。现在生成评估报告并写入 `baseline_report.txt`，随后打印。
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc "cat > /workspace/baseline_report.txt <<'REPORT'
+baseline-run-88fbf6d36e67 | ===== 主机安全基线评估报告 =====
+baseline-run-88fbf6d36e67 | 生成时间(UTC): 2026-09-07
+baseline-run-88fbf6d36e67 | 执行方式: bash security_baseline_check.sh（确定性采集+评分）；本报告仅做评估，未修改任何系统配置。
+baseline-run-88fbf6d36e67 | 运行身份: root (uid=0) — 仅只读检查。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 确定性评分摘要 (security_baseline_check.sh 输出) ----
+baseline-run-88fbf6d36e67 | TOTAL_ITEMS=10  RISK_POINTS=45  OVERALL_LEVEL=MEDIUM
+baseline-run-88fbf6d36e67 | 逐项: 1-ssh-auth OK | 2-firewall FAIL +25 | 3-passwd-aging WARN +10 | 3b-passwd-min WARN +5 |
+baseline-run-88fbf6d36e67 | 3c-chage-landed OK | 4-suid-privesc OK | 4b-suid-count OK | 5-open-ports OK |
+baseline-run-88fbf6d36e67 | 6-critical-perms OK | 7-cron-perms WARN +5
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- STEP 2: OctoBus 能力网关验证 ----
+baseline-run-88fbf6d36e67 | 调用: curl -s -m 8 -X POST http://octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello -H 'Content-Type: application/json' -d '{\"name\":\"security-agent\"}'
+baseline-run-88fbf6d36e67 | 响应(JSON): {\"greeting\":\"Hello, security-agent, from OctoBus"'!","serviceId":"hello-service","instanceId":"hello-inst"}
+baseline-run-88fbf6d36e67 | 结论: 能力通道经 OctoBus 网关成功路由（hello.v1.HelloService/SayHello 返回正常），未见绕过网关迹象。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 逐项发现与处置建议 ----
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 1) SSH root 登录与密码认证 — 风险: 低（当前无暴露面；属"未配置"而非"已加固"）
+baseline-run-88fbf6d36e67 |    事实: 主机未安装 OpenSSH（sshd、ssh、/etc/ssh 目录均不存在，无 sshd_config）；脚本通过 sshd -T 及配置文件回退均未取到 PermitRootLogin/PasswordAuthentication 生效值。
+baseline-run-88fbf6d36e67 |    评估: 因无 SSH 服务端，不存在可被利用的 root/密码 SSH 登录面，故直接风险低。
+baseline-run-88fbf6d36e67 |    处置: 若未来需提供 SSH，安装 openssh-server 后立即固化 /etc/ssh/sshd_config: PermitRootLogin no、PasswordAuthentication no、PubkeyAuthentication yes、PermitEmptyPasswords no，并以 sshd -T 复核生效值；当前保持不安装即为最小暴露面。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 2) 防火墙 — 风险: 高
+baseline-run-88fbf6d36e67 |    事实: ufw、iptables、nft 均未安装，未检测到任何活动防火墙或过滤规则（ufw: not active or not installed；iptables/nftables: 无规则输出）。
+baseline-run-88fbf6d36e67 |    评估: 主机无任何入站过滤层；一旦部署对外服务或本机被接入网络，将完全依赖上层网络策略，攻击面无本地兜底。
+baseline-run-88fbf6d36e67 |    处置: 安装并启用 ufw（或等价 nftables 规则），策略设为默认拒绝入站、仅放行必需端口/源；容器/云场景同时配置安全组或网络策略形成纵深防御。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 3) 密码老化策略 — 风险: 中
+baseline-run-88fbf6d36e67 |    事实: /etc/login.defs 中 PASS_MAX_DAYS=99999（密码永不过期）、PASS_MIN_DAYS=0（允许立即改密）、PASS_WARN_AGE=7；当前无 UID>=1000 的交互账号（login.defs 仅对新建账号生效）。
+baseline-run-88fbf6d36e67 |    评估: 默认策略不强制密码轮换且允许即时改密，弱密码/泄漏密码可长期有效。
+baseline-run-88fbf6d36e67 |    处置: 将 PASS_MAX_DAYS 调至 <=90、PASS_MIN_DAYS 调至 >=1、PASS_WARN_AGE >=7；对存量账号用 chage -M 90 -m 1 -W 7 落地（login.defs 不覆盖已存在账号），并纳入账号上线流程。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 4) 全局可写 SUID/SGID — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: SUID 二进制共 8 个，全部为标准系统工具且 root 属主: /usr/bin/su、chfn、mount、passwd、gpasswd、chsh、umount、newgrp；非 root 属主或全局可写的 SUID/SGID 提权面 = 0。
+baseline-run-88fbf6d36e67 |    评估: 无异常提权面，均为发行版常规集合。
+baseline-run-88fbf6d36e67 |    处置: 维持现状并建立 SUID 白名单基线，定期以 find / -xdev -type f -perm /6000 复核，新出现项须评审后方可保留。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 5) 开放监听端口 — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: 仅检测到 1 个监听: 127.0.0.11:9227（loopback；ss/netstat 缺失，由 /proc/net/tcp 回退采集）；对外 (0.0.0.0/::) 监听数 = 0。
+baseline-run-88fbf6d36e67 |    评估: 唯一监听绑定回环地址，无外部暴露面。
+baseline-run-88fbf6d36e67 |    处置: 保持服务仅绑定 loopback；未来新增服务应显式绑定具体接口而非 0.0.0.0，并配合防火墙/安全组放行。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 6) 关键文件权限 (/etc/passwd /etc/shadow /etc/group) — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: /etc/shadow 640 root:shadow；/etc/passwd 644 root:root；/etc/group 644 root:root。
+baseline-run-88fbf6d36e67 |    评估: shadow 属 root:shadow 且 640，满足受限要求（600/640/000）；passwd/group 常规 644 正确。
+baseline-run-88fbf6d36e67 |    处置: 维持 shadow 640（或收紧至 600/000），不得将 shadow 改为全局可读或授予非 root/shadow 主体。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 7) 补充观察: cron 权限 — 风险: 低（确定性评分记 WARN）
+baseline-run-88fbf6d36e67 |    事实: /etc/crontab 不存在；/etc/cron.d 仅含 root 属主、644 的 e2scrub_all（不可组/其他写）。确定性评分因 /etc/crontab 缺失记 WARN（非可写性问题）。
+baseline-run-88fbf6d36e67 |    处置: 缺失主 crontab 本身非安全问题；建议统一 cron 目录审计：确保 /etc/cron.d、/etc/cron.daily 等目录及文件 root 属主且非组/他写，禁止在 cron 中引用全局可写脚本路径。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 综合结论 ----
+baseline-run-88fbf6d36e67 | 主机当前整体风险为"中"（RISK_POINTS=45），主要扣分来自: 无任何防火墙规则(+25) 与密码老化策略过宽(+15)。
+baseline-run-88fbf6d36e67 | SSH、SUID、开放端口、关键文件权限四项处于良好状态。建议优先处置防火墙与密码策略两项，并将 sshd_config 加固作为安装 SSH 服务的前置条件。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ===== 报告结束 =====
+baseline-run-88fbf6d36e67 | REPORT
+baseline-run-88fbf6d36e67 | echo "written: $(wc -c < /workspace/baseline_report.txt) bytes"'
+baseline-run-88fbf6d36e67 | written: 5115 bytes
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | $ /bin/bash -lc 'cat /workspace/baseline_report.txt'
+baseline-run-88fbf6d36e67 | ===== 主机安全基线评估报告 =====
+baseline-run-88fbf6d36e67 | 生成时间(UTC): 2026-09-07
+baseline-run-88fbf6d36e67 | 执行方式: bash security_baseline_check.sh（确定性采集+评分）；本报告仅做评估，未修改任何系统配置。
+baseline-run-88fbf6d36e67 | 运行身份: root (uid=0) — 仅只读检查。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 确定性评分摘要 (security_baseline_check.sh 输出) ----
+baseline-run-88fbf6d36e67 | TOTAL_ITEMS=10  RISK_POINTS=45  OVERALL_LEVEL=MEDIUM
+baseline-run-88fbf6d36e67 | 逐项: 1-ssh-auth OK | 2-firewall FAIL +25 | 3-passwd-aging WARN +10 | 3b-passwd-min WARN +5 |
+baseline-run-88fbf6d36e67 | 3c-chage-landed OK | 4-suid-privesc OK | 4b-suid-count OK | 5-open-ports OK |
+baseline-run-88fbf6d36e67 | 6-critical-perms OK | 7-cron-perms WARN +5
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- STEP 2: OctoBus 能力网关验证 ----
+baseline-run-88fbf6d36e67 | 调用: curl -s -m 8 -X POST http://octobus:9000/capsets/devcap/connect/hello-inst/hello.v1.HelloService/SayHello -H 'Content-Type: application/json' -d '{"name":"security-agent"}'
+baseline-run-88fbf6d36e67 | 响应(JSON): {"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}
+baseline-run-88fbf6d36e67 | 结论: 能力通道经 OctoBus 网关成功路由（hello.v1.HelloService/SayHello 返回正常），未见绕过网关迹象。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 逐项发现与处置建议 ----
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 1) SSH root 登录与密码认证 — 风险: 低（当前无暴露面；属"未配置"而非"已加固"）
+baseline-run-88fbf6d36e67 |    事实: 主机未安装 OpenSSH（sshd、ssh、/etc/ssh 目录均不存在，无 sshd_config）；脚本通过 sshd -T 及配置文件回退均未取到 PermitRootLogin/PasswordAuthentication 生效值。
+baseline-run-88fbf6d36e67 |    评估: 因无 SSH 服务端，不存在可被利用的 root/密码 SSH 登录面，故直接风险低。
+baseline-run-88fbf6d36e67 |    处置: 若未来需提供 SSH，安装 openssh-server 后立即固化 /etc/ssh/sshd_config: PermitRootLogin no、PasswordAuthentication no、PubkeyAuthentication yes、PermitEmptyPasswords no，并以 sshd -T 复核生效值；当前保持不安装即为最小暴露面。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 2) 防火墙 — 风险: 高
+baseline-run-88fbf6d36e67 |    事实: ufw、iptables、nft 均未安装，未检测到任何活动防火墙或过滤规则（ufw: not active or not installed；iptables/nftables: 无规则输出）。
+baseline-run-88fbf6d36e67 |    评估: 主机无任何入站过滤层；一旦部署对外服务或本机被接入网络，将完全依赖上层网络策略，攻击面无本地兜底。
+baseline-run-88fbf6d36e67 |    处置: 安装并启用 ufw（或等价 nftables 规则），策略设为默认拒绝入站、仅放行必需端口/源；容器/云场景同时配置安全组或网络策略形成纵深防御。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 3) 密码老化策略 — 风险: 中
+baseline-run-88fbf6d36e67 |    事实: /etc/login.defs 中 PASS_MAX_DAYS=99999（密码永不过期）、PASS_MIN_DAYS=0（允许立即改密）、PASS_WARN_AGE=7；当前无 UID>=1000 的交互账号（login.defs 仅对新建账号生效）。
+baseline-run-88fbf6d36e67 |    评估: 默认策略不强制密码轮换且允许即时改密，弱密码/泄漏密码可长期有效。
+baseline-run-88fbf6d36e67 |    处置: 将 PASS_MAX_DAYS 调至 <=90、PASS_MIN_DAYS 调至 >=1、PASS_WARN_AGE >=7；对存量账号用 chage -M 90 -m 1 -W 7 落地（login.defs 不覆盖已存在账号），并纳入账号上线流程。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 4) 全局可写 SUID/SGID — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: SUID 二进制共 8 个，全部为标准系统工具且 root 属主: /usr/bin/su、chfn、mount、passwd、gpasswd、chsh、umount、newgrp；非 root 属主或全局可写的 SUID/SGID 提权面 = 0。
+baseline-run-88fbf6d36e67 |    评估: 无异常提权面，均为发行版常规集合。
+baseline-run-88fbf6d36e67 |    处置: 维持现状并建立 SUID 白名单基线，定期以 find / -xdev -type f -perm /6000 复核，新出现项须评审后方可保留。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 5) 开放监听端口 — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: 仅检测到 1 个监听: 127.0.0.11:9227（loopback；ss/netstat 缺失，由 /proc/net/tcp 回退采集）；对外 (0.0.0.0/::) 监听数 = 0。
+baseline-run-88fbf6d36e67 |    评估: 唯一监听绑定回环地址，无外部暴露面。
+baseline-run-88fbf6d36e67 |    处置: 保持服务仅绑定 loopback；未来新增服务应显式绑定具体接口而非 0.0.0.0，并配合防火墙/安全组放行。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 6) 关键文件权限 (/etc/passwd /etc/shadow /etc/group) — 风险: 低
+baseline-run-88fbf6d36e67 |    事实: /etc/shadow 640 root:shadow；/etc/passwd 644 root:root；/etc/group 644 root:root。
+baseline-run-88fbf6d36e67 |    评估: shadow 属 root:shadow 且 640，满足受限要求（600/640/000）；passwd/group 常规 644 正确。
+baseline-run-88fbf6d36e67 |    处置: 维持 shadow 640（或收紧至 600/000），不得将 shadow 改为全局可读或授予非 root/shadow 主体。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 7) 补充观察: cron 权限 — 风险: 低（确定性评分记 WARN）
+baseline-run-88fbf6d36e67 |    事实: /etc/crontab 不存在；/etc/cron.d 仅含 root 属主、644 的 e2scrub_all（不可组/其他写）。确定性评分因 /etc/crontab 缺失记 WARN（非可写性问题）。
+baseline-run-88fbf6d36e67 |    处置: 缺失主 crontab 本身非安全问题；建议统一 cron 目录审计：确保 /etc/cron.d、/etc/cron.daily 等目录及文件 root 属主且非组/他写，禁止在 cron 中引用全局可写脚本路径。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ---- 综合结论 ----
+baseline-run-88fbf6d36e67 | 主机当前整体风险为"中"（RISK_POINTS=45），主要扣分来自: 无任何防火墙规则(+25) 与密码老化策略过宽(+15)。
+baseline-run-88fbf6d36e67 | SSH、SUID、开放端口、关键文件权限四项处于良好状态。建议优先处置防火墙与密码策略两项，并将 sshd_config 加固作为安装 SSH 服务的前置条件。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | ===== 报告结束 =====
+baseline-run-88fbf6d36e67 | 检查完成，未修改任何系统配置。报告已写入 `/workspace/baseline_report.txt` 并打印。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | **执行摘要**
+baseline-run-88fbf6d36e67 | - STEP 1: 运行 `bash security_baseline_check.sh`，确定性采集完成，评分 `RISK_POINTS=45 / OVERALL_LEVEL=MEDIUM`。
+baseline-run-88fbf6d36e67 | - STEP 2: OctoBus 网关 hello 调用成功，响应 `{"greeting":"Hello, security-agent, from OctoBus!","serviceId":"hello-service","instanceId":"hello-inst"}`，确认能力通道经网关路由。
+baseline-run-88fbf6d36e67 | - STEP 3/4: 中文评估报告已生成并持久化。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | **主要发现**
+baseline-run-88fbf6d36e67 | - 防火墙 — 高：`ufw`/`iptables`/`nft` 均未安装，无任何过滤规则；建议启用防火墙并默认拒绝入站。
+baseline-run-88fbf6d36e67 | - 密码老化 — 中：`PASS_MAX_DAYS=99999`（永不过期）、`PASS_MIN_DAYS=0`；建议调至 `<=90`/`>=1` 并对存量账号用 `chage` 落地。
+baseline-run-88fbf6d36e67 | - SSH root/密码认证 — 低：未安装 OpenSSH（`/etc/ssh` 不存在），无实际暴露面；但属"未配置"，安装后需固化 `sshd_config`。
+baseline-run-88fbf6d36e67 | - SUID — 低：8 个均标准 root 属主，全局可写/非 root 提权面为 0。
+baseline-run-88fbf6d36e67 | - 开放端口 — 低：唯一监听为回环 `127.0.0.11:9227`，对外监听为 0。
+baseline-run-88fbf6d36e67 | - 关键文件权限 — 低：`/etc/shadow` 为 `640 root:shadow`，符合受限要求。
+baseline-run-88fbf6d36e67 | 
+baseline-run-88fbf6d36e67 | 整体定级为"中"，优先处置项为防火墙与密码策略。报告全文见 `/workspace/baseline_report.txt:1`。

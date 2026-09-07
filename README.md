@@ -9,7 +9,7 @@
 │  agent-compose daemon                                          │
 │   └─ agent "baseline" (provider=codex, model=deepseek-chat)    │
 │        sandbox: chaitin/agent-compose-guest                    │
-│        ├─ STEP1  bash security_baseline_check.sh   (确定性采集) │
+│        ├─ STEP1  bash security_baseline_check.sh   (确定性采集+评分)│
 │        ├─ STEP2  curl octobus:9000/.../SayHello    (能力调用)   │
 │        ├─ STEP3  LLM 风险评估 (基于采集事实)                    │
 │        └─ STEP4  写 baseline_report.txt                        │
@@ -92,6 +92,8 @@ agent-compose scheduler trigger <scheduler-id> daily-baseline
 ```
 
 > `run_prompt.txt` 见 `runs/` 下的执行 prompt（STEP1-4 流程，已同步保留在部署环境）。
+
+> **5.1-2 评分分工说明**：`security_baseline_check.sh` 承担两部分——[COLLECT] 确定性事实采集 + [EVAL] 确定性风险评分（`[EVAL]` 行，按固定阈值对 ssh/auth、防火墙、口令老化、SUID 数量、开放端口、关键文件权限、cron 权限逐项打分并汇总 `RISK_POINTS`/`OVERALL_LEVEL`）。评分是纯代码计算，不依赖模型；LLM 只负责对评分结果做整改建议、排序与叙述。判定过程中所有阈值均可回溯到脚本 `grade()` 逻辑，满足评定重点 5.1 第 2 条「可确定性评分由代码实现」。
 
 ### 4. 查看结果
 
